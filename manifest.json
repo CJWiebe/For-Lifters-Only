@@ -1,6 +1,6 @@
 {
-  "name": "Jim Tracker - Workout Logger",
-  "short_name": "Jim Tracker",
+  "name": "For Lifters Only",
+  "short_name": "For Lifters Only",
   "description": "Track your gym workouts with equipment-based exercise selection",
   "start_url": "/For-Lifters-Only/",
   "display": "standalone",
