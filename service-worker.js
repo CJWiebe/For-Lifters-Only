@@ -1,9 +1,9 @@
 const CACHE_NAME = 'jim-tracker-v1';
 const urlsToCache = [
-  '/Jim-Tracker/',
-  '/Jim-Tracker/index.html',
-  '/Jim-Tracker/exercises.json',
-  '/Jim-Tracker/equipment.json'
+  '/For-Lifters-Only/',
+  '/For-Lifters-Only/index.html',
+  '/For-Lifters-Only/exercises.json',
+  '/For-Lifters-Only/equipment.json'
 ];
 
 // Install event - cache files
