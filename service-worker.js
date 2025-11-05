@@ -1,4 +1,4 @@
-const CACHE_NAME = 'jim-tracker-v2';
+const CACHE_NAME = 'jim-tracker-v5';
 const urlsToCache = [
   '/For-Lifters-Only/',
   '/For-Lifters-Only/index.html',

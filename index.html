@@ -846,10 +846,6 @@
                                 <input type="checkbox" class="custom-muscle-checkbox" value="Core">
                                 <span>Core</span>
                             </label>
-                            <label class="muscle-checkbox-label">
-                                <input type="checkbox" class="custom-muscle-checkbox" value="Legs">
-                                <span>Legs</span>
-                            </label>
                         </div>
                     </div>
                     
@@ -1200,6 +1196,7 @@
             if (!select) return;
             const currentValue = select.value;
             select.innerHTML = '<option value="">Select a workout...</option>' + 
+                '<option value="custom">🏋️ Custom Workout</option>' +
                 workouts.map(([id, w]) => 
                     `<option value="${id}">${w.name}</option>`
                 ).join('');
@@ -1214,6 +1211,27 @@
         
         if (!workoutId) {
             alert('Please select a workout!');
+            return;
+        }
+        
+        // Handle custom workout
+        if (workoutId === 'custom') {
+            // Check if bodyweight is set and remind user
+            const currentBodyweight = parseFloat(appData.settings?.bodyWeight);
+            if (!currentBodyweight) {
+                const setBW = confirm('⚠️ No bodyweight set!\n\nFor accurate tracking of bodyweight exercises (pull-ups, push-ups, dips, etc.), set your bodyweight in Settings.\n\nContinue without setting bodyweight?');
+                if (!setBW) {
+                    showTab('settings');
+                    return;
+                }
+            }
+            
+            currentWorkoutId = null; // No specific workout selected
+            workoutStartTime = Date.now();
+            document.getElementById('currentWorkoutName').textContent = 'Custom Workout';
+            
+            showActiveWorkoutInterface();
+            saveActiveWorkout();
             return;
         }
         
@@ -1799,6 +1817,25 @@
     }
     window.saveWorkout = saveWorkout;
     
+    function editWorkout(workoutId) {
+        const workout = appData.workouts[workoutId];
+        if (!workout) return;
+        
+        editingWorkoutId = workoutId;
+        
+        // Show the form
+        showWorkoutForm();
+        
+        // Populate the form with existing data
+        document.getElementById('workoutName').value = workout.name;
+        
+        // Check the muscle group checkboxes
+        document.querySelectorAll('.muscle-checkbox').forEach(cb => {
+            cb.checked = workout.muscleGroups.includes(cb.value);
+        });
+    }
+    window.editWorkout = editWorkout;
+    
     function showWorkoutsList() {
         const container = document.getElementById('workoutsList');
         const workouts = Object.entries(appData.workouts || {});
@@ -1824,7 +1861,8 @@
                             <div style="font-size: 12px; opacity: 0.8;">${muscleGroupsText}</div>
                         </div>
                         <div style="display: flex; gap: 6px;">
-                            <button class="action-btn danger" data-workout-id="${id}">Delete</button>
+                            <button class="action-btn primary edit-workout-btn" data-workout-id="${id}">Edit</button>
+                            <button class="action-btn danger delete-workout-btn" data-workout-id="${id}">Delete</button>
                         </div>
                     </div>
                 </div>
@@ -1833,7 +1871,16 @@
         
         container.innerHTML = html;
         
-        container.querySelectorAll('.action-btn').forEach(btn => {
+        // Edit button listeners
+        container.querySelectorAll('.edit-workout-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const id = this.dataset.workoutId;
+                editWorkout(id);
+            });
+        });
+        
+        // Delete button listeners
+        container.querySelectorAll('.delete-workout-btn').forEach(btn => {
             btn.addEventListener('click', function() {
                 const id = this.dataset.workoutId;
                 if (confirm('Delete this workout?')) {
@@ -1946,8 +1993,11 @@
             
             return `
                 <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 8px;">
-                    <div style="font-weight: 600; color: #10b981; font-size: 14px;">
-                        ${exerciseCount} exercises, ${setCount} sets
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <div style="font-weight: 600; color: #10b981; font-size: 14px;">
+                            ${exerciseCount} exercises, ${setCount} sets
+                        </div>
+                        ${w.workoutName ? `<div style="background: rgba(59, 130, 246, 0.3); padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #60a5fa;">${w.workoutName}</div>` : ''}
                     </div>
                     <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">
                         ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}
