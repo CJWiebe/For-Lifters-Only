@@ -2535,7 +2535,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `jim-tracker-backup-${new Date().toISOString().split('T')[0]}.json`;
+            a.download = `for-lifters-only-backup-${new Date().toISOString().split('T')[0]}.json`;
             a.click();
             URL.revokeObjectURL(url);
         });
