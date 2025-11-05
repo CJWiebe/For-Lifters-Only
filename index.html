@@ -732,6 +732,26 @@
 
         <!-- History Tab -->
         <div id="historyTab" class="hidden">
+            <!-- Streak Stats Card -->
+            <div class="workout-card" style="margin-bottom: 15px;">
+                <h3 style="color: #10b981; margin-bottom: 15px; text-align: center;">Your Stats</h3>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                    <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;" id="currentStreak">0</div>
+                        <div style="font-size: 0.75rem; opacity: 0.6; margin-top: 2px;" id="bestStreakMonthSub">(Best: 0)</div>
+                        <div style="font-size: 0.9rem; opacity: 0.8; margin-top: 4px;">Day Streak</div>
+                    </div>
+                    <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;" id="daysThisWeek">0</div>
+                        <div style="font-size: 0.9rem; opacity: 0.8; margin-top: 8px;">Days This Week</div>
+                    </div>
+                    <div style="text-align: center; background: rgba(255,255,255,0.05); padding: 15px; border-radius: 8px;">
+                        <div style="font-size: 2rem; font-weight: bold; color: #f59e0b;" id="daysThisMonth">0</div>
+                        <div style="font-size: 0.9rem; opacity: 0.8; margin-top: 8px;">Days This Month</div>
+                    </div>
+                </div>
+            </div>
+            
             <div class="workout-card">
                 <h3 style="color: #10b981; margin-bottom: 10px;">Workout History</h3>
                 <div id="historyContent"></div>
@@ -1826,7 +1846,79 @@
         });
     }
     
+    function calculateStreakStats() {
+        const historyDates = Object.keys(appData.history || {}).map(dateStr => {
+            const d = new Date(dateStr);
+            return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+        }).filter(date => !isNaN(date));
+        
+        if (historyDates.length === 0) {
+            return { currentStreak: 0, bestStreakMonth: 0, daysThisWeek: 0, daysThisMonth: 0 };
+        }
+        
+        const uniqueDates = [...new Set(historyDates)].sort((a, b) => b - a);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayTime = today.getTime();
+        
+        // Calculate current streak
+        let currentStreak = 0;
+        let checkDate = todayTime;
+        
+        for (let i = 0; i < uniqueDates.length; i++) {
+            if (uniqueDates[i] === checkDate) {
+                currentStreak++;
+                checkDate -= 86400000; // Go back one day
+            } else if (uniqueDates[i] < checkDate) {
+                break;
+            }
+        }
+        
+        // Calculate best streak this month
+        const thisMonth = today.getMonth();
+        const thisYear = today.getFullYear();
+        const thisMonthDates = uniqueDates.filter(d => {
+            const date = new Date(d);
+            return date.getMonth() === thisMonth && date.getFullYear() === thisYear;
+        }).sort((a, b) => a - b);
+        
+        let bestStreakMonth = 0;
+        let tempStreak = 0;
+        let lastDate = null;
+        
+        for (const dateTime of thisMonthDates) {
+            if (lastDate === null || dateTime === lastDate + 86400000) {
+                tempStreak++;
+                bestStreakMonth = Math.max(bestStreakMonth, tempStreak);
+            } else {
+                tempStreak = 1;
+            }
+            lastDate = dateTime;
+        }
+        
+        // Calculate days this week
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+        const daysThisWeek = uniqueDates.filter(d => d >= startOfWeek.getTime() && d <= todayTime).length;
+        
+        // Calculate days this month
+        const startOfMonth = new Date(thisYear, thisMonth, 1);
+        const daysThisMonth = uniqueDates.filter(d => {
+            const date = new Date(d);
+            return date.getMonth() === thisMonth && date.getFullYear() === thisYear;
+        }).length;
+        
+        return { currentStreak, bestStreakMonth, daysThisWeek, daysThisMonth };
+    }
+    
     function showHistory() {
+        // Calculate and display stats
+        const stats = calculateStreakStats();
+        document.getElementById('currentStreak').textContent = stats.currentStreak;
+        document.getElementById('bestStreakMonthSub').textContent = `(Best: ${stats.bestStreakMonth})`;
+        document.getElementById('daysThisWeek').textContent = stats.daysThisWeek;
+        document.getElementById('daysThisMonth').textContent = stats.daysThisMonth;
+        
         const container = document.getElementById('historyContent');
         const history = Object.entries(appData.history || {})
             .sort((a, b) => new Date(b[0]) - new Date(a[0]))
