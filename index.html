@@ -946,6 +946,11 @@
     let timerInterval = null;
     let timerRunning = false;
     
+    // Inactivity notification state
+    let inactivityTimer = null;
+    let notificationPermissionGranted = false;
+    const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
+    
     // Storage
     function saveData() {
         localStorage.setItem('jimTrackerData', JSON.stringify(appData));
@@ -1038,9 +1043,14 @@
         showWorkoutsList();
         updateSummary();
         
+        // Set up inactivity notifications
+        setupInactivityListeners();
+        await requestNotificationPermission();
+        
         // Check if there's an active workout session
         if (currentWorkoutId || activeExercises.length > 0) {
             showActiveWorkoutInterface();
+            resetInactivityTimer(); // Start the inactivity timer for active workouts
         }
     }
     
@@ -1160,6 +1170,82 @@
     }
     window.resetTimer = resetTimer;
     
+    // Inactivity notification functions
+    async function requestNotificationPermission() {
+        if (!('Notification' in window)) {
+            console.log('This browser does not support notifications');
+            return false;
+        }
+        
+        if (Notification.permission === 'granted') {
+            notificationPermissionGranted = true;
+            return true;
+        }
+        
+        if (Notification.permission !== 'denied') {
+            const permission = await Notification.requestPermission();
+            notificationPermissionGranted = permission === 'granted';
+            return notificationPermissionGranted;
+        }
+        
+        return false;
+    }
+    
+    function showInactivityNotification() {
+        if (!notificationPermissionGranted || !('Notification' in window)) {
+            return;
+        }
+        
+        // Only show if there's an active workout
+        if (activeExercises.length === 0) {
+            return;
+        }
+        
+        const notification = new Notification('For Lifters Only', {
+            body: 'Are you still there? Don\'t forget to submit your workout!',
+            icon: 'icon-192.png',
+            badge: 'icon-192.png',
+            tag: 'inactivity-reminder',
+            requireInteraction: false,
+            silent: false
+        });
+        
+        notification.onclick = function() {
+            window.focus();
+            this.close();
+        };
+    }
+    
+    function resetInactivityTimer() {
+        // Clear existing timer
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+        }
+        
+        // Only set timer if there's an active workout
+        if (activeExercises.length > 0) {
+            inactivityTimer = setTimeout(() => {
+                showInactivityNotification();
+            }, INACTIVITY_TIMEOUT);
+        }
+    }
+    
+    function clearInactivityTimer() {
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = null;
+        }
+    }
+    
+    // Set up activity listeners to reset the inactivity timer
+    function setupInactivityListeners() {
+        const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+        
+        events.forEach(event => {
+            document.addEventListener(event, resetInactivityTimer, { passive: true });
+        });
+    }
+    
     // Workout dropdown functions
     function updateWorkoutDropdowns() {
         const selects = [document.getElementById('workoutSelectStart')];
@@ -1245,6 +1331,7 @@
         
         showActiveWorkoutInterface();
         saveActiveWorkout();
+        resetInactivityTimer(); // Start the 30-minute inactivity timer
     }
     window.startWorkoutSession = startWorkoutSession;
     
@@ -1257,6 +1344,8 @@
     
     function endWorkoutSession() {
         if (!confirm('⚠️ End workout and discard all data?\n\nAll exercises and sets will be deleted. This cannot be undone.')) return;
+        
+        clearInactivityTimer(); // Clear the inactivity timer when workout is cancelled
         
         // Clear all exercises
         activeExercises = [];
@@ -1405,6 +1494,8 @@
         activeExercises.push(newExercise);
         console.log('Exercise added. Active exercises:', activeExercises);
         
+        resetInactivityTimer(); // Reset timer when exercise is added
+        
         document.getElementById('exerciseSearch').value = '';
         document.getElementById('searchResults').classList.add('hidden');
         document.getElementById('workoutSelectStart').value = '';
@@ -1540,11 +1631,23 @@
                     removeExercise(id);
                 });
             } else if (action === 'update-set') {
-                element.addEventListener('change', function() {
+                // Use 'blur' instead of 'change' for validation to work better
+                element.addEventListener('blur', function() {
                     const exerciseId = parseInt(this.getAttribute('data-exercise-id'));
                     const setIndex = parseInt(this.getAttribute('data-set-index'));
                     const field = this.getAttribute('data-field');
                     updateSet(exerciseId, setIndex, field, this.value);
+                });
+                // Also save on 'change' but without validation prompt (for immediate updates)
+                element.addEventListener('input', function() {
+                    const exerciseId = parseInt(this.getAttribute('data-exercise-id'));
+                    const setIndex = parseInt(this.getAttribute('data-set-index'));
+                    const field = this.getAttribute('data-field');
+                    const exercise = activeExercises.find(ex => ex.id === exerciseId);
+                    if (exercise && exercise.sets[setIndex]) {
+                        exercise.sets[setIndex][field] = this.value;
+                        updateSummary();
+                    }
                 });
             } else if (action === 'remove-set') {
                 element.addEventListener('click', function() {
@@ -1604,13 +1707,153 @@
         return history.sort((a, b) => new Date(b.date) - new Date(a.date));
     }
     
+    function getExerciseMaxValues(exerciseName) {
+        // Get historical max values for this exercise
+        const history = Object.values(appData.history || {});
+        let maxWeight = 0;
+        let maxReps = 0;
+        
+        for (const workout of history) {
+            const exercise = workout.exercises?.find(ex => ex.name === exerciseName);
+            if (exercise && exercise.sets) {
+                for (const set of exercise.sets) {
+                    const weight = parseFloat(set.weight) || 0;
+                    const reps = parseFloat(set.reps) || 0;
+                    if (weight > maxWeight) maxWeight = weight;
+                    if (reps > maxReps) maxReps = reps;
+                }
+            }
+        }
+        
+        return { maxWeight, maxReps };
+    }
+    
+    function validateSetValue(exerciseName, field, value) {
+        // Convert to number
+        const numValue = parseFloat(value);
+        if (isNaN(numValue) || numValue <= 0) {
+            return { valid: true, correctedValue: value }; // Let empty/invalid through
+        }
+        
+        // Get historical maxes
+        const { maxWeight, maxReps } = getExerciseMaxValues(exerciseName);
+        
+        // Define thresholds based on field type
+        if (field === 'weight') {
+            // Absolute maximum limits
+            const ABSOLUTE_MAX_WEIGHT = 1000; // Nobody is lifting 1000lbs
+            
+            if (numValue > ABSOLUTE_MAX_WEIGHT) {
+                // Definitely a typo - try removing last digit
+                const corrected = Math.floor(numValue / 10);
+                return {
+                    valid: false,
+                    correctedValue: corrected,
+                    message: `${numValue} lbs seems unrealistic. Did you mean ${corrected} lbs?`
+                };
+            }
+            
+            // Check against historical max (if we have history)
+            if (maxWeight > 0) {
+                // If new value is more than 2.5x previous max, likely a typo
+                const threshold = maxWeight * 2.5;
+                if (numValue > threshold) {
+                    // Try removing last digit
+                    const corrected = Math.floor(numValue / 10);
+                    
+                    // Only suggest correction if it's within reasonable range
+                    if (corrected <= threshold || corrected <= maxWeight * 1.5) {
+                        return {
+                            valid: false,
+                            correctedValue: corrected,
+                            message: `${numValue} lbs is much higher than your previous max (${maxWeight} lbs). Did you mean ${corrected} lbs?`
+                        };
+                    } else {
+                        // Even the correction is too high, just warn
+                        return {
+                            valid: false,
+                            correctedValue: numValue,
+                            message: `${numValue} lbs is much higher than your previous max (${maxWeight} lbs). Is this correct?`
+                        };
+                    }
+                }
+            }
+        } else if (field === 'reps') {
+            // Absolute maximum limits
+            const ABSOLUTE_MAX_REPS = 100; // Very high but possible for bodyweight exercises
+            
+            if (numValue > ABSOLUTE_MAX_REPS) {
+                // Definitely a typo - try removing last digit
+                const corrected = Math.floor(numValue / 10);
+                return {
+                    valid: false,
+                    correctedValue: corrected,
+                    message: `${numValue} reps seems unrealistic. Did you mean ${corrected} reps?`
+                };
+            }
+            
+            // Check against historical max (if we have history)
+            if (maxReps > 0) {
+                // If new value is more than 3x previous max, likely a typo
+                const threshold = maxReps * 3;
+                if (numValue > threshold) {
+                    // Try removing last digit
+                    const corrected = Math.floor(numValue / 10);
+                    
+                    // Only suggest correction if it's within reasonable range
+                    if (corrected <= threshold || corrected <= maxReps * 2) {
+                        return {
+                            valid: false,
+                            correctedValue: corrected,
+                            message: `${numValue} reps is much higher than your previous max (${maxReps} reps). Did you mean ${corrected} reps?`
+                        };
+                    } else {
+                        // Even the correction is too high, just warn
+                        return {
+                            valid: false,
+                            correctedValue: numValue,
+                            message: `${numValue} reps is much higher than your previous max (${maxReps} reps). Is this correct?`
+                        };
+                    }
+                }
+            }
+        }
+        
+        return { valid: true, correctedValue: value };
+    }
+    
     function updateSet(exerciseId, setIndex, field, value) {
         const exercise = activeExercises.find(ex => ex.id === exerciseId);
-        if (exercise && exercise.sets[setIndex]) {
-            exercise.sets[setIndex][field] = value;
-            updateSummary();
-            saveActiveWorkout();
+        if (!exercise || !exercise.sets[setIndex]) return;
+        
+        // Only validate weight and reps fields
+        if (field === 'weight' || field === 'reps') {
+            const validation = validateSetValue(exercise.name, field, value);
+            
+            if (!validation.valid) {
+                // Show confirmation dialog with suggestion
+                const userResponse = confirm(validation.message + '\n\nClick OK to use the suggested value, or Cancel to keep what you entered.');
+                
+                if (userResponse) {
+                    // Use the corrected value
+                    exercise.sets[setIndex][field] = validation.correctedValue.toString();
+                } else {
+                    // Keep the original value
+                    exercise.sets[setIndex][field] = value;
+                }
+                
+                // Re-render to show the updated value
+                renderExerciseList();
+                updateSummary();
+                saveActiveWorkout();
+                return;
+            }
         }
+        
+        // If validation passed or not a weight/reps field, save normally
+        exercise.sets[setIndex][field] = value;
+        updateSummary();
+        saveActiveWorkout();
     }
     window.updateSet = updateSet;
     
@@ -1691,9 +1934,18 @@
             return;
         }
         
-        // Cardio confirmation
-        if (!confirm('No cardio? Are you sure you want to leave?')) {
-            return;
+        // Check if cardio was done today
+        const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
+        const cardioToday = Object.keys(appData.cardio || {}).some(dateKey => {
+            const cardioDate = new Date(dateKey).toISOString().split('T')[0];
+            return cardioDate === today;
+        });
+        
+        // Cardio confirmation - only ask if no cardio was done today
+        if (!cardioToday) {
+            if (!confirm('No cardio? Are you sure you want to leave?')) {
+                return;
+            }
         }
         
         // Get current bodyweight
@@ -1733,6 +1985,8 @@
         appData.history[workout.date] = workout;
         appData.activeWorkout = {};
         saveData();
+        
+        clearInactivityTimer(); // Clear the inactivity timer when workout is submitted
         
         activeExercises = [];
         currentWorkoutId = null;
@@ -1964,22 +2218,29 @@
                 }, 0);
             }, 0) : 0;
             
+            // Get workout day name - make it prominent
+            const workoutDayName = w.workoutName || 'Custom Workout';
+            
             return `
                 <div style="background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin-bottom: 8px;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <div style="font-weight: 600; color: #10b981; font-size: 14px;">
-                            ${exerciseCount} exercises, ${setCount} sets
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 6px;">
+                        <div>
+                            <div style="font-weight: 700; color: #10b981; font-size: 16px; margin-bottom: 2px;">
+                                ${workoutDayName}
+                            </div>
+                            <div style="font-size: 12px; opacity: 0.8;">
+                                ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}
+                                ${w.duration ? ` • ⏱️ ${w.duration} min` : ''}
+                            </div>
                         </div>
-                        ${w.workoutName ? `<div style="background: rgba(59, 130, 246, 0.3); padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; color: #60a5fa;">${w.workoutName}</div>` : ''}
-                    </div>
-                    <div style="font-size: 12px; opacity: 0.8; margin-top: 2px;">
-                        ${date.toLocaleDateString()} at ${date.toLocaleTimeString()}
-                        ${w.duration ? ` • ⏱️ ${w.duration} min` : ''}
-                    </div>
-                    <div style="font-size: 12px; margin-top: 2px; opacity: 0.7;">
-                        💪 Bodyweight: ${bodyweight} • Volume: ${Math.round(volume)} lbs
+                        <div style="text-align: right; font-size: 11px; opacity: 0.7;">
+                            ${exerciseCount} exercises<br>${setCount} sets
+                        </div>
                     </div>
                     <div style="font-size: 12px; margin-top: 4px; opacity: 0.7;">
+                        💪 Bodyweight: ${bodyweight} • Volume: ${Math.round(volume)} lbs
+                    </div>
+                    <div style="font-size: 11px; margin-top: 4px; opacity: 0.6; line-height: 1.4;">
                         ${w.exercises?.map(ex => ex.name).join(', ') || 'No exercises'}
                     </div>
                 </div>

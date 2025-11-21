@@ -1,71 +1,78 @@
-const CACHE_NAME = 'jim-tracker-v6';
+const CACHE_NAME = 'for-lifters-only-v1';
 const urlsToCache = [
-  '/For-Lifters-Only/',
-  '/For-Lifters-Only/index.html',
-  '/For-Lifters-Only/exercises.json',
-  '/For-Lifters-Only/equipment.json'
+  './',
+  './MK36_Workout_Day_History.html',
+  './exercises.json',
+  './manifest.json'
 ];
 
-// Install event - cache files
-self.addEventListener('install', (event) => {
-  console.log('Service Worker: Installing...');
+// Install event - cache resources
+self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('Service Worker: Caching files');
+      .then(cache => {
+        console.log('Opened cache');
         return cache.addAll(urlsToCache);
       })
-      .then(() => self.skipWaiting())
+      .catch(err => {
+        console.log('Cache installation failed:', err);
+      })
   );
-});
-
-// Activate event - clean up old caches
-self.addEventListener('activate', (event) => {
-  console.log('Service Worker: Activating...');
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            console.log('Service Worker: Clearing old cache');
-            return caches.delete(cache);
-          }
-        })
-      );
-    }).then(() => self.clients.claim())
-  );
+  self.skipWaiting();
 });
 
 // Fetch event - serve from cache, fallback to network
-self.addEventListener('fetch', (event) => {
+self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(event.request)
-      .then((response) => {
+      .then(response => {
         // Cache hit - return response
         if (response) {
           return response;
         }
-
+        
         // Clone the request
         const fetchRequest = event.request.clone();
-
-        return fetch(fetchRequest).then((response) => {
+        
+        return fetch(fetchRequest).then(response => {
           // Check if valid response
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
-
+          
           // Clone the response
           const responseToCache = response.clone();
-
-          // Cache the fetched response for future use
+          
           caches.open(CACHE_NAME)
-            .then((cache) => {
+            .then(cache => {
               cache.put(event.request, responseToCache);
             });
-
+          
           return response;
         });
       })
+      .catch(() => {
+        // Offline fallback could go here
+        console.log('Fetch failed; returning offline page instead.');
+      })
   );
+});
+
+// Activate event - clean up old caches
+self.addEventListener('activate', event => {
+  const cacheWhitelist = [CACHE_NAME];
+  
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(
+        cacheNames.map(cacheName => {
+          if (cacheWhitelist.indexOf(cacheName) === -1) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
+  );
+  
+  return self.clients.claim();
 });

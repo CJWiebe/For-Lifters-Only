@@ -1,12 +1,12 @@
 {
   "name": "For Lifters Only",
-  "short_name": "For Lifters Only",
+  "short_name": "For Lifters",
   "description": "Track your gym workouts with equipment-based exercise selection",
-  "start_url": "/For-Lifters-Only/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#1f2937",
   "theme_color": "#1f2937",
-  "orientation": "portrait",
+  "orientation": "portrait-primary",
   "icons": [
     {
       "src": "icon-192.png",
