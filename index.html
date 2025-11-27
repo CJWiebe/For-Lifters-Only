@@ -949,6 +949,8 @@
     // Inactivity notification state
     let inactivityTimer = null;
     let notificationPermissionGranted = false;
+    let lastActivityTime = Date.now();
+    let lastVisibilityTime = Date.now();
     const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds
     
     // Storage
@@ -1192,41 +1194,69 @@
     }
     
     function showInactivityNotification() {
+        console.log('showInactivityNotification called');
+        console.log('Permission granted:', notificationPermissionGranted);
+        console.log('Active exercises:', activeExercises.length);
+        
         if (!notificationPermissionGranted || !('Notification' in window)) {
+            console.log('Notification not supported or permission not granted');
             return;
         }
         
         // Only show if there's an active workout
         if (activeExercises.length === 0) {
+            console.log('No active exercises, skipping notification');
             return;
         }
         
-        const notification = new Notification('For Lifters Only', {
-            body: 'Are you still there? Don\'t forget to submit your workout!',
-            icon: 'icon-192.png',
-            badge: 'icon-192.png',
-            tag: 'inactivity-reminder',
-            requireInteraction: false,
-            silent: false
-        });
+        console.log('Showing inactivity notification');
         
-        notification.onclick = function() {
-            window.focus();
-            this.close();
-        };
+        try {
+            const notification = new Notification('For Lifters Only', {
+                body: 'Are you still there? Don\'t forget to submit your workout!',
+                icon: 'icon-192.png',
+                badge: 'icon-192.png',
+                tag: 'inactivity-reminder',
+                requireInteraction: false,
+                silent: false,
+                vibrate: [200, 100, 200]
+            });
+            
+            notification.onclick = function() {
+                window.focus();
+                this.close();
+            };
+            
+            console.log('Notification created successfully');
+        } catch (error) {
+            console.error('Error creating notification:', error);
+        }
     }
     
     function resetInactivityTimer() {
+        // Update last activity time
+        lastActivityTime = Date.now();
+        
         // Clear existing timer
         if (inactivityTimer) {
             clearTimeout(inactivityTimer);
+            console.log('Cleared existing inactivity timer');
         }
         
         // Only set timer if there's an active workout
         if (activeExercises.length > 0) {
+            const minutes = INACTIVITY_TIMEOUT / 1000 / 60;
+            const targetTime = new Date(Date.now() + INACTIVITY_TIMEOUT);
+            console.log('Setting inactivity timer for', minutes, 'minutes (will fire at', targetTime.toLocaleTimeString() + ')');
+            console.log('Current active exercises:', activeExercises.length);
+            
             inactivityTimer = setTimeout(() => {
+                console.log('Inactivity timeout reached at', new Date().toLocaleTimeString());
+                console.log('Active exercises at timeout:', activeExercises.length);
                 showInactivityNotification();
             }, INACTIVITY_TIMEOUT);
+        } else {
+            console.log('Not setting inactivity timer - no active exercises');
         }
     }
     
@@ -1244,6 +1274,49 @@
         events.forEach(event => {
             document.addEventListener(event, resetInactivityTimer, { passive: true });
         });
+        
+        // Add visibility change detection for when phone unlocks or tab comes back into focus
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                console.log('Page became visible again');
+                checkInactivityOnWake();
+            } else {
+                console.log('Page hidden - saving last visibility time');
+                lastVisibilityTime = Date.now();
+            }
+        });
+        
+        // Add page focus detection
+        window.addEventListener('focus', () => {
+            console.log('Window focused');
+            checkInactivityOnWake();
+        });
+    }
+    
+    function checkInactivityOnWake() {
+        // Check if there's an active workout
+        if (activeExercises.length === 0) {
+            console.log('No active workout, skipping inactivity check');
+            return;
+        }
+        
+        const now = Date.now();
+        const timeSinceLastActivity = now - lastActivityTime;
+        const minutesSinceActivity = Math.floor(timeSinceLastActivity / 1000 / 60);
+        
+        console.log('Checking inactivity on wake:');
+        console.log('- Time since last activity:', minutesSinceActivity, 'minutes');
+        console.log('- Inactivity threshold:', INACTIVITY_TIMEOUT / 1000 / 60, 'minutes');
+        
+        // If we've been inactive for more than the threshold, show notification
+        if (timeSinceLastActivity >= INACTIVITY_TIMEOUT) {
+            console.log('Inactive for', minutesSinceActivity, 'minutes - showing notification');
+            showInactivityNotification();
+        } else {
+            console.log('Not inactive long enough yet');
+            // Restart the timer for remaining time
+            resetInactivityTimer();
+        }
     }
     
     // Workout dropdown functions
